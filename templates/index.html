@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pinterest DL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #141414;
+      --canvas-bg:  #0f0f0f;
+      --surface:    #1b1b1b;
+      --surface2:   #222222;
+      --border:     #272727;
+      --border2:    #333333;
+      --accent:     #4d7aff;
+      --accent-dim: rgba(77,122,255,.14);
+      --text:       #e0e0e0;
+      --muted:      #6e6e6e;
+      --muted2:     #3e3e3e;
+      --ok:         #3ecf6e;
+      --err:        #ff4d4d;
+      --warn:       #f5a623;
+      --term-bg:    #0a0a0a;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    /* ── App shell ──────────────────────────────────── */
+    .app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Topbar ─────────────────────────────────────── */
+    .topbar {
+      height: 40px; flex-shrink: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 14px; gap: 10px;
+      z-index: 20;
+    }
+    .topbar-logo {
+      font-size: 12px; font-weight: 600; letter-spacing: -.01em;
+      display: flex; align-items: center; gap: 2px; user-select: none;
+    }
+    .topbar-logo-dl { color: var(--accent); }
+    .topbar-sep { width: 1px; height: 16px; background: var(--border2); }
+    .topbar-addr {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted2);
+    }
+    .topbar-spacer { flex: 1; }
+    .login-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border: 1px solid var(--border2); border-radius: 6px;
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      transition: border-color .15s, background .15s; user-select: none;
+    }
+    .login-badge:hover { background: var(--surface2); border-color: var(--border2); }
+    .b-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; }
+    .b-dot.on  { background: var(--ok); }
+    .b-dot.off { background: var(--warn); }
+    .b-label { color: var(--muted); }
+    .b-label.on  { color: var(--ok); }
+    .b-label.off { color: var(--warn); }
+
+    /* ── Main: sidebar + canvas ─────────────────────── */
+    .main { flex: 1; display: flex; overflow: hidden; }
+
+    /* ── Sidebar ────────────────────────────────────── */
+    .sidebar {
+      width: 256px; min-width: 256px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sidebar-scroll {
+      flex: 1; overflow-y: auto; overflow-x: hidden; padding: 12px;
+    }
+    .sidebar-scroll::-webkit-scrollbar { width: 3px; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    /* section */
+    .sidebar-section { margin-bottom: 14px; }
+    .sec-label {
+      font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--muted2); margin-bottom: 7px; display: block;
+    }
+
+    /* mode tabs */
+    .mode-tabs {
+      display: flex; background: var(--canvas-bg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px;
+    }
+    .mode-tab {
+      flex: 1; padding: 6px 0; background: none; border: none; border-radius: 5px;
+      color: var(--muted); font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: background .15s, color .15s;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .mode-tab.active { background: var(--surface2); color: var(--text); }
+    .mode-tab:not(.active):hover { color: var(--text); }
+
+    /* panels */
+    .panel { display: none; flex-direction: column; gap: 9px; }
+    .panel.active { display: flex; }
+
+    /* field */
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field-label {
+      font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--muted);
+    }
+    .field-input {
+      background: var(--canvas-bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 12px;
+      outline: none; width: 100%; transition: border-color .15s, box-shadow .15s;
+    }
+    .field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .field-input::placeholder { color: var(--muted2); }
+
+    .artist-input {
+      background: var(--canvas-bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 9px 11px; color: var(--text); font-family: 'Inter', sans-serif;
+      font-size: 14px; font-weight: 400;
+      outline: none; width: 100%; transition: border-color .15s, box-shadow .15s;
+    }
+    .artist-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .artist-input::placeholder { color: var(--muted2); }
+
+    /* chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      padding: 4px 10px; background: var(--canvas-bg); border: 1px solid var(--border);
+      border-radius: 20px; color: var(--muted);
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      transition: background .12s, color .12s, border-color .12s; user-select: none;
+    }
+    .chip.active { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
+    .chip:not(.active):hover { background: var(--surface2); color: var(--text); }
+
+    /* dir row */
+    .dir-row { display: flex; gap: 5px; }
+    .dir-row .field-input { flex: 1; }
+    .btn-dir {
+      width: 32px; background: var(--canvas-bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--muted); font-size: 13px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: color .12s, border-color .12s; flex-shrink: 0;
+    }
+    .btn-dir:hover { color: var(--text); border-color: var(--border2); }
+
+    /* slider */
+    .slider-row { display: flex; align-items: center; gap: 9px; }
+    .slider-val {
+      font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;
+      color: var(--accent); min-width: 36px; text-align: right; flex-shrink: 0;
+    }
+    input[type="range"] {
+      -webkit-appearance: none; width: 100%; height: 2px;
+      background: var(--border2); border-radius: 2px; outline: none; cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 13px; height: 13px;
+      background: var(--accent); border-radius: 50%; cursor: pointer; transition: transform .1s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+    hr.div { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+    /* search button */
+    .btn-search {
+      width: 100%; padding: 9px; background: var(--accent); color: #fff;
+      border: none; border-radius: 6px; font-family: 'Inter', sans-serif;
+      font-size: 12px; font-weight: 600; letter-spacing: .01em;
+      cursor: pointer; transition: background .12s, transform .1s;
+    }
+    .btn-search:hover  { background: #3d6aee; }
+    .btn-search:active { transform: scale(.98); }
+    .btn-search.loading { opacity: .6; cursor: wait; }
+
+    /* status bar */
+    .status-bar {
+      padding: 7px 9px; background: var(--canvas-bg);
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .status-top { display: flex; align-items: center; gap: 6px; }
+    .s-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; transition: background .25s; }
+    .s-dot.running { background: var(--accent); animation: blink 1s infinite; }
+    .s-dot.done    { background: var(--ok); }
+    .s-dot.error   { background: var(--err); }
+    @keyframes blink { 0%,100%{opacity:1}50%{opacity:.3} }
+    .s-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); flex: 1; }
+    .s-count { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent); font-weight: 500; }
+
+    /* progress bar */
+    .search-progress { display: none; flex-direction: column; gap: 3px; margin-top: 6px; }
+    .search-progress.visible { display: flex; }
+    .sp-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; position: relative; }
+    .sp-fill  { height: 100%; width: 0%; background: var(--accent); border-radius: 3px;
+                transition: width .4s cubic-bezier(.4,0,.2,1); }
+    @keyframes sp-indeterminate {
+      0%   { left: -40%; width: 40%; }
+      60%  { left: 100%; width: 40%; }
+      100% { left: 100%; width: 40%; }
+    }
+    .sp-fill.indeterminate {
+      position: absolute; width: 40% !important;
+      animation: sp-indeterminate 1.5s cubic-bezier(.4,0,.2,1) infinite;
+    }
+    .sp-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); }
+
+    /* ── Terminal accordion (sidebar bottom) ─────────── */
+    .term-accordion { border-top: 1px solid var(--border); flex-shrink: 0; }
+    .term-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 12px; cursor: pointer; user-select: none;
+      background: var(--surface); transition: background .1s;
+    }
+    .term-header:hover { background: var(--surface2); }
+    .term-header-left { display: flex; align-items: center; gap: 7px; }
+    .term-dots { display: flex; gap: 4px; }
+    .term-dot  { width: 8px; height: 8px; border-radius: 50%; }
+    .term-dot:nth-child(1){background:#e05454}
+    .term-dot:nth-child(2){background:#e0a040}
+    .term-dot:nth-child(3){background:#4fc46a}
+    .term-title-text { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); }
+    .term-toggle-icon { color: var(--muted2); font-size: 9px; transition: transform .2s; }
+    .term-toggle-icon.open { transform: rotate(180deg); }
+    .term-body { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+    .term-body.open { max-height: 200px; }
+    .term-out {
+      height: 200px; overflow-y: auto; padding: 9px 13px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6; color: #777;
+      background: var(--term-bg);
+    }
+    .term-out::-webkit-scrollbar { width: 3px; }
+    .term-out::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+    .ll { display: flex; white-space: pre-wrap; word-break: break-all; }
+    .ll-p { color: var(--accent); margin-right: 6px; flex-shrink: 0; user-select: none; font-size: 9px; }
+    .ll-t { flex: 1; }
+    .ll.ok   .ll-t { color: var(--ok); }
+    .ll.err  .ll-t { color: var(--err); }
+    .ll.warn .ll-t { color: var(--warn); }
+    .ll.info .ll-t { color: var(--text); }
+    .ll.dim  .ll-t { color: var(--muted); }
+
+    /* ── Canvas ─────────────────────────────────────── */
+    .canvas {
+      flex: 1; display: flex; flex-direction: column;
+      background: var(--canvas-bg); overflow: hidden;
+    }
+
+    /* canvas toolbar */
+    .canvas-toolbar {
+      height: 40px; flex-shrink: 0;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 12px; gap: 8px;
+    }
+    .canvas-title {
+      font-size: 11px; font-weight: 400; color: var(--muted);
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .canvas-title strong { color: var(--text); font-weight: 600; }
+    .canvas-count {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-sm {
+      padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 5px; color: var(--muted); font-family: 'Inter', sans-serif;
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      transition: color .12s, border-color .12s; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-sm:hover { color: var(--text); border-color: var(--border2); }
+    .btn-dl-main {
+      padding: 5px 13px; background: var(--accent); color: #fff; border: none;
+      border-radius: 5px; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      letter-spacing: .01em; cursor: pointer; transition: background .12s; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-dl-main:hover    { background: #3d6aee; }
+    .btn-dl-main:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* canvas scroll */
+    .canvas-scroll {
+      flex: 1; overflow-y: auto; overflow-x: hidden; position: relative;
+      background-image: radial-gradient(circle, #232323 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    .canvas-scroll::-webkit-scrollbar { width: 5px; }
+    .canvas-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* empty state */
+    .canvas-empty {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; pointer-events: none;
+    }
+    .canvas-empty.hidden { display: none; }
+    .canvas-empty-icon { opacity: .25; display: flex; align-items: center; }
+    .canvas-empty-text {
+      font-size: 12px; color: var(--muted2); text-align: center; line-height: 1.7;
+    }
+
+    /* ── Image grid ──────────────────────────────────── */
+    .image-grid {
+      columns: 8 110px; column-gap: 2px; padding: 2px;
+    }
+    .grid-item {
+      break-inside: avoid; margin-bottom: 2px; position: relative;
+      cursor: pointer; overflow: hidden; transition: opacity .15s;
+    }
+    .grid-item img { width: 100%; display: block; }
+    .grid-item.off { opacity: .18; }
+
+    /* hover overlay */
+    .grid-item::before {
+      content: ''; position: absolute; inset: 0;
+      background: transparent; transition: background .12s;
+      z-index: 1; pointer-events: none;
+    }
+    .grid-item:hover::before { background: rgba(77,122,255,.2); }
+
+    /* checkmark badge */
+    .grid-item::after {
+      content: '✓'; position: absolute; top: 4px; right: 4px;
+      width: 15px; height: 15px;
+      background: rgba(255,255,255,.9); border-radius: 50%;
+      color: #111; font-size: 8px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity .12s; z-index: 2; pointer-events: none;
+      line-height: 15px; text-align: center;
+    }
+    .grid-item:not(.off):hover::after { opacity: 1; }
+    .grid-item.off::after {
+      content: '✕'; opacity: .7;
+      background: rgba(224,77,77,.85); color: #fff;
+    }
+
+    /* alt tooltip */
+    .grid-item .alt-tip {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 5px 7px 4px;
+      background: linear-gradient(transparent, rgba(0,0,0,.82));
+      font-size: 10px; color: rgba(255,255,255,.88); line-height: 1.3;
+      opacity: 0; transition: opacity .12s; z-index: 3; pointer-events: none;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .grid-item:hover .alt-tip { opacity: 1; }
+
+    /* loading placeholder */
+    .grid-item img.loading { min-height: 80px; background: var(--surface2); display: block; }
+
+    /* ── Lightbox ─────────────────────────────────────── */
+    .lightbox {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.92); backdrop-filter: blur(12px);
+      display: none; align-items: center; justify-content: center;
+    }
+    .lightbox.open { display: flex; animation: lb-in .18s ease both; }
+    @keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
+
+    .lb-close {
+      position: absolute; top: 14px; right: 16px;
+      width: 30px; height: 30px; background: rgba(40,40,40,.9);
+      border: 1px solid var(--border2); border-radius: 6px;
+      color: var(--muted); font-size: 14px; display: flex;
+      align-items: center; justify-content: center;
+      cursor: pointer; transition: color .12s, background .12s; z-index: 10;
+    }
+    .lb-close:hover { color: var(--text); background: var(--surface2); }
+
+    .lb-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 34px; height: 56px; background: rgba(27,27,27,.85);
+      border: 1px solid var(--border2); border-radius: 8px;
+      color: var(--muted); font-size: 20px; display: flex;
+      align-items: center; justify-content: center;
+      cursor: pointer; transition: color .12s, background .12s;
+      z-index: 10; user-select: none;
+    }
+    .lb-nav:hover { color: var(--text); background: var(--surface2); }
+    .lb-prev { left: 14px; }
+    .lb-next { right: 14px; }
+
+    .lb-content {
+      display: flex; flex-direction: column; align-items: center;
+      max-width: calc(100vw - 130px); max-height: calc(100vh - 70px);
+      gap: 10px; animation: lb-scale .18s ease both;
+    }
+    @keyframes lb-scale { from { transform: scale(.96); } to { transform: scale(1); } }
+
+    .lb-img {
+      max-width: 100%; max-height: calc(100vh - 120px);
+      object-fit: contain; border-radius: 4px; display: block;
+      box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    }
+
+    .lb-footer {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 0 4px;
+    }
+    .lb-alt {
+      flex: 1; font-size: 11px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .lb-counter {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted2);
+      flex-shrink: 0; white-space: nowrap;
+    }
+    .lb-select-btn {
+      padding: 5px 11px; background: none;
+      border: 1px solid var(--border2); border-radius: 5px;
+      color: var(--muted); font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: all .12s; flex-shrink: 0;
+    }
+    .lb-select-btn.selected { border-color: var(--ok); color: var(--ok); }
+    .lb-select-btn.deselected { border-color: var(--err); color: var(--err); }
+    .lb-select-btn:hover { opacity: .8; }
+    .lb-dl-btn {
+      padding: 5px 13px; background: var(--accent); color: #fff; border: none;
+      border-radius: 5px; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: background .12s; flex-shrink: 0;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .lb-dl-btn:hover    { background: #3d6aee; }
+    .lb-dl-btn:disabled { opacity: .5; cursor: wait; }
+
+    /* ── Download bar (fixed bottom) ──────────────────── */
+    .dl-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(18,18,18,.97); backdrop-filter: blur(8px);
+      border-top: 1px solid var(--border); padding: 9px 16px;
+      display: none; align-items: center; gap: 12px; z-index: 100;
+    }
+    .dl-bar.visible { display: flex; }
+    .dl-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: blink 1s infinite; }
+    .dl-dot.done  { background: var(--ok);  animation: none; }
+    .dl-dot.error { background: var(--err); animation: none; }
+    .dl-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dl-stop {
+      padding: 4px 10px; background: none; border: 1px solid var(--border);
+      border-radius: 5px; color: var(--muted);
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: color .12s, border-color .12s; flex-shrink: 0;
+    }
+    .dl-stop:hover { color: var(--err); border-color: var(--err); }
+
+    /* ── Login modal ──────────────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,.8); backdrop-filter: blur(8px);
+      display: none; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 10px; padding: 22px; width: 336px; max-width: 95vw;
+      animation: lb-scale .18s ease both;
+    }
+    .modal-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+    .modal-sub   { font-size: 11px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+
+    .modal-tabs {
+      display: flex; background: var(--canvas-bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 3px; gap: 2px; margin-bottom: 14px;
+    }
+    .modal-tab {
+      flex: 1; padding: 6px 0; background: none; border: none; border-radius: 5px;
+      color: var(--muted); font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: background .12s, color .12s;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .modal-tab.active { background: var(--surface2); color: var(--text); }
+
+    .modal-fields { display: flex; flex-direction: column; gap: 10px; }
+    .modal-row    { display: flex; flex-direction: column; gap: 4px; }
+    .modal-label  {
+      font-size: 9.5px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .modal-input {
+      background: var(--canvas-bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 12px;
+      outline: none; width: 100%; transition: border-color .12s, box-shadow .12s;
+    }
+    .modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .modal-wait-row { display: flex; align-items: center; gap: 10px; }
+    .modal-wait-val {
+      font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 600;
+      color: var(--accent); min-width: 34px; text-align: right;
+    }
+    .modal-actions { display: flex; gap: 7px; margin-top: 16px; }
+    .btn-modal-cancel {
+      flex: 1; padding: 8px; background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: color .12s, border-color .12s;
+    }
+    .btn-modal-cancel:hover { color: var(--text); border-color: var(--border2); }
+    .btn-modal-login {
+      flex: 2; padding: 8px; background: var(--accent); color: #fff;
+      border: none; border-radius: 6px; font-family: 'Inter', sans-serif;
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s;
+    }
+    .btn-modal-login:hover    { background: #3d6aee; }
+    .btn-modal-login:disabled { opacity: .55; cursor: wait; }
+    .modal-log {
+      margin-top: 12px; padding: 8px 10px; background: var(--term-bg);
+      border: 1px solid var(--border); border-radius: 5px;
+      font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6;
+      color: var(--muted); max-height: 110px; overflow-y: auto; display: none;
+    }
+    .modal-log.visible { display: block; }
+    .btn-logout {
+      margin-top: 10px; padding: 7px 0; width: 100%;
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
+      cursor: pointer; transition: color .12s, border-color .12s;
+    }
+    .btn-logout:hover { color: var(--err); border-color: var(--err); }
+    .modal-hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
+    .btn-open-chrome {
+      width: 100%; padding: 9px; background: var(--accent); color: #fff;
+      border: none; border-radius: 6px; font-family: 'Inter', sans-serif;
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: background .12s;
+    }
+    .btn-open-chrome:hover    { background: #3d6aee; }
+    .btn-open-chrome:disabled { opacity: .55; cursor: wait; }
+
+    #dir-picker { display: none; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Topbar ── -->
+  <div class="topbar">
+    <div class="topbar-logo">Pinterest <span class="topbar-logo-dl">DL</span></div>
+    <div class="topbar-sep"></div>
+    <span class="topbar-addr">localhost:5050</span>
+    <div class="topbar-spacer"></div>
+    <div class="login-badge" id="login-badge" onclick="openLoginModal()">
+      <div class="b-dot {% if logged_in %}on{% else %}off{% endif %}" id="badge-dot"></div>
+      <span class="b-label {% if logged_in %}on{% else %}off{% endif %}" id="badge-label">
+        {% if logged_in %}Přihlášen{% else %}Nepřihlášen{% endif %}
+      </span>
+    </div>
+  </div>
+
+  <!-- ── Login modal ── -->
+  <div class="modal-overlay" id="modal-overlay" onclick="closeLoginModal(event)">
+    <div class="modal">
+      <div class="modal-title">Přihlásit se</div>
+      <div class="modal-sub" id="modal-sub">
+        {% if logged_in %}Cookies jsou uloženy — Pinterest API přijme více výsledků.
+        {% else %}Přihlášení výrazně zvýší počet dostupných výsledků.{% endif %}
+      </div>
+      <div class="modal-tabs" id="modal-tabs">
+        <button class="modal-tab active" id="tab-chrome"     onclick="switchLoginTab('chrome')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Chrome</button>
+        <button class="modal-tab"        id="tab-playwright" onclick="switchLoginTab('playwright')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Playwright</button>
+      </div>
+      <!-- chrome panel -->
+      <div class="modal-fields" id="modal-chrome-panel">
+        <p class="modal-hint">Otevře Pinterest v normálním Chrome — přihlaste se i přes Google. Poté klikněte na <em>Extrahovat cookies</em>.</p>
+        <button class="btn-open-chrome" id="btn-open-chrome" onclick="openPinterestInChrome()">
+          Otevřít Pinterest v&nbsp;Chrome
+        </button>
+        <div id="chrome-step2" style="display:none;margin-top:12px">
+          <p class="modal-hint" style="margin-bottom:8px">✓ Přihlaste se, pak klikněte:</p>
+          <button class="btn-open-chrome" id="btn-extract" onclick="extractChromeCookies()" style="background:var(--ok);color:#0b0b0b">
+            Extrahovat cookies z Chrome
+          </button>
+        </div>
+      </div>
+      <!-- playwright panel -->
+      <div class="modal-fields" id="modal-playwright-panel" style="display:none">
+        <div class="modal-row">
+          <label class="modal-label">Email</label>
+          <input class="modal-input" type="email" id="login-email" placeholder="váš@email.com" autocomplete="email">
+        </div>
+        <div class="modal-row">
+          <label class="modal-label">Heslo</label>
+          <input class="modal-input" type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="modal-row">
+          <label class="modal-label">Čekací čas (sek)</label>
+          <div class="modal-wait-row">
+            <input type="range" id="wait-slider" min="10" max="60" value="20" step="5"
+                   oninput="$('wait-val').textContent=this.value">
+            <div class="modal-wait-val" id="wait-val">20</div>
+          </div>
+        </div>
+        <div class="modal-actions" style="margin-top:14px">
+          <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
+          <button class="btn-modal-login" id="btn-modal-login" onclick="doLogin()">
+            <span id="modal-btn-label">Přihlásit se</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-log" id="modal-log"></div>
+      <div class="modal-actions" id="modal-chrome-actions">
+        <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
+      </div>
+      <button class="btn-logout" id="btn-logout"
+              style="{% if not logged_in %}display:none{% endif %}"
+              onclick="doLogout()">Odhlásit se (smazat cookies)</button>
+    </div>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-scroll">
+
+        <div class="sidebar-section">
+          <!-- Mode tabs -->
+          <div class="mode-tabs" style="margin-bottom:10px">
+            <button class="mode-tab active" id="tab-artist" onclick="setMode('artist')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> Umělec</button>
+            <button class="mode-tab"        id="tab-url"    onclick="setMode('url')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> URL</button>
+          </div>
+
+          <!-- Artist panel -->
+          <div class="panel active" id="panel-artist">
+            <div class="field">
+              <label class="field-label">Jméno umělce</label>
+              <input class="artist-input" type="text" id="artist-name"
+                     placeholder="např. Luc Tuymans" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label class="field-label">Typ díla</label>
+              <div class="chips" id="chips">
+                <div class="chip active" data-kw="paintings" onclick="toggleChip(this)">Malby</div>
+                <div class="chip"        data-kw="drawings"  onclick="toggleChip(this)">Kresby</div>
+                <div class="chip"        data-kw="prints"    onclick="toggleChip(this)">Grafika</div>
+                <div class="chip"        data-kw="art"       onclick="toggleChip(this)">Umění</div>
+                <div class="chip"        data-kw=""          onclick="toggleChip(this)">Vše</div>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Výstupní složka</label>
+              <div class="dir-row">
+                <input class="field-input" type="text" id="output-artist" value="{{ default_output }}" spellcheck="false">
+                <button class="btn-dir" onclick="pickDir('output-artist')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Výsledků</label>
+              <div class="slider-row">
+                <input type="range" id="count-artist" min="10" max="2000" value="500" step="10">
+                <div class="slider-val" id="count-artist-val">500</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- URL panel -->
+          <div class="panel" id="panel-url">
+            <div class="field">
+              <label class="field-label">Pinterest URL</label>
+              <input class="field-input" type="text" id="pin-url"
+                     placeholder="https://www.pinterest.com/username/board/" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label class="field-label">Výstupní složka</label>
+              <div class="dir-row">
+                <input class="field-input" type="text" id="output-url" value="{{ default_output }}" spellcheck="false">
+                <button class="btn-dir" onclick="pickDir('output-url')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Počet obrázků</label>
+              <div class="slider-row">
+                <input type="range" id="count-url" min="10" max="2000" value="100" step="10">
+                <div class="slider-val" id="count-url-val">100</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search button + status -->
+        <div class="sidebar-section">
+          <button class="btn-search" id="btn-search" onclick="startSearch()">
+            <span id="btn-label">Hledat</span>
+          </button>
+          <div class="status-bar" style="margin-top:8px">
+            <div class="status-top">
+              <div class="s-dot" id="s-dot"></div>
+              <span class="s-text" id="s-text">Připraveno</span>
+              <span class="s-count" id="s-count" style="display:none"></span>
+            </div>
+            <div class="search-progress" id="search-progress">
+              <div class="sp-track"><div class="sp-fill" id="sp-fill"></div></div>
+              <span class="sp-label" id="sp-label"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Terminal accordion -->
+      <div class="term-accordion">
+        <div class="term-header" onclick="toggleTerminal()">
+          <div class="term-header-left">
+            <div class="term-dots">
+              <div class="term-dot"></div><div class="term-dot"></div><div class="term-dot"></div>
+            </div>
+            <span class="term-title-text">pinterest-dl</span>
+          </div>
+          <span class="term-toggle-icon" id="term-toggle-icon">▲</span>
+        </div>
+        <div class="term-body" id="term-body">
+          <div class="term-out" id="log"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="canvas">
+      <!-- Canvas toolbar -->
+      <div class="canvas-toolbar">
+        <span class="canvas-title" id="canvas-title">Hledat výsledky…</span>
+        <span class="canvas-count" id="canvas-count"></span>
+        <button class="btn-sm"      id="btn-select-all"   style="display:none" onclick="selectAll()">Vybrat vše</button>
+        <button class="btn-sm"      id="btn-deselect-all" style="display:none" onclick="deselectAll()">Odznačit vše</button>
+        <button class="btn-dl-main" id="btn-dl"           style="display:none" onclick="startDownload()">Stáhnout 0</button>
+      </div>
+      <!-- Grid scroll -->
+      <div class="canvas-scroll" id="canvas-scroll">
+        <div class="canvas-empty" id="canvas-empty">
+          <div class="canvas-empty-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg></div>
+          <div class="canvas-empty-text">Zadejte jméno umělce nebo URL<br>a klikněte <strong>Hledat</strong></div>
+        </div>
+        <div class="image-grid" id="image-grid"></div>
+      </div>
+    </div>
+
+  </div><!-- /.main -->
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <button class="lb-close" onclick="closeLightbox()">✕</button>
+    <button class="lb-nav lb-prev" onclick="lbNav(-1)">‹</button>
+    <button class="lb-nav lb-next" onclick="lbNav(1)">›</button>
+    <div class="lb-content">
+      <img class="lb-img" id="lb-img" src="" alt="">
+      <div class="lb-footer">
+        <span class="lb-alt"     id="lb-alt"></span>
+        <span class="lb-counter" id="lb-counter"></span>
+        <button class="lb-select-btn" id="lb-select-btn" onclick="lbToggleSelect()"></button>
+        <button class="lb-dl-btn"     id="lb-dl-btn"     onclick="downloadSingle()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="12" y1="3" x2="12" y2="15"/><polyline points="7 10 12 15 17 10"/><line x1="4" y1="21" x2="20" y2="21"/></svg> Stáhnout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Download bar -->
+  <div class="dl-bar" id="dl-bar">
+    <div class="dl-dot" id="dl-dot"></div>
+    <div class="dl-text" id="dl-text">Připravuji stahování…</div>
+    <button class="dl-stop" onclick="stopDownload()">Zastavit</button>
+  </div>
+
+</div>
+<input type="file" id="dir-picker" webkitdirectory style="display:none">
+
+<script>
+/* ── utils ─────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+
+function addLine(text, cls='') {
+  const out = $('log');
+  const row = document.createElement('div'); row.className = `ll ${cls}`;
+  const p = document.createElement('span'); p.className='ll-p'; p.textContent='›';
+  const t = document.createElement('span'); t.className='ll-t'; t.textContent=text;
+  row.appendChild(p); row.appendChild(t);
+  out.appendChild(row);
+  out.scrollTop = out.scrollHeight;
+  // auto-open terminal on first message
+  if (!termOpen) { toggleTerminal(); }
+}
+function clearLog() { $('log').innerHTML=''; }
+function classify(txt) {
+  const l = txt.toLowerCase();
+  if (/error|failed|exception|traceback/.test(l)) return 'err';
+  if (/warn/.test(l)) return 'warn';
+  if (/saved|done|complete|downloaded|success|hotovo/.test(l)) return 'ok';
+  if (/searching|scraping|fetching|found|loading|nalezeno|hledám/.test(l)) return 'info';
+  return '';
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+/* ── terminal accordion ──────────────────────────────────────────── */
+let termOpen = false;
+function toggleTerminal() {
+  termOpen = !termOpen;
+  $('term-body').classList.toggle('open', termOpen);
+  $('term-toggle-icon').classList.toggle('open', termOpen);
+}
+
+/* ── mode ─────────────────────────────────────────────────────────── */
+let mode = 'artist';
+function setMode(m) {
+  mode = m;
+  $('tab-artist').classList.toggle('active', m==='artist');
+  $('tab-url').classList.toggle('active',    m==='url');
+  $('panel-artist').classList.toggle('active', m==='artist');
+  $('panel-url').classList.toggle('active',    m==='url');
+  $('btn-label').textContent = m==='artist' ? 'Hledat' : 'Hledat / Scrape';
+}
+
+/* ── chips ────────────────────────────────────────────────────────── */
+function toggleChip(el) {
+  const isBlank = el.dataset.kw === '';
+  if (isBlank) {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+  } else {
+    $('chips').querySelector('[data-kw=""]').classList.remove('active');
+    el.classList.toggle('active');
+    if (!document.querySelector('.chip.active')) el.classList.add('active');
+  }
+}
+function getActiveChips() {
+  return [...document.querySelectorAll('.chip.active')].map(c => c.dataset.kw).filter(Boolean);
+}
+
+/* ── sliders ──────────────────────────────────────────────────────── */
+$('count-artist').addEventListener('input', e => $('count-artist-val').textContent = e.target.value);
+$('count-url').addEventListener('input',    e => $('count-url-val').textContent    = e.target.value);
+
+/* ── dir picker ──────────────────────────────────────────────────── */
+function pickDir(inputId) {
+  $('dir-picker').onchange = () => {
+    if ($('dir-picker').files.length) {
+      const folder = $('dir-picker').files[0].webkitRelativePath.split('/')[0];
+      addLine(`Složka: ${folder}`, 'dim');
+    }
+  };
+  $('dir-picker').click();
+}
+
+/* ── state ────────────────────────────────────────────────────────── */
+let previewJobId  = null;
+let downloadJobId = null;
+let currentQuery  = '';
+let currentOutput = '';
+let images        = [];    // [{id, src, alt, selected}]
+let es            = null;
+let lbIndex       = -1;
+
+function setStatus(state, text) {
+  $('s-dot').className = `s-dot ${state}`;
+  $('s-text').textContent = text;
+}
+function showSearchProgress(pct, found, done, total) {
+  const wrap = $('search-progress');
+  wrap.classList.add('visible');
+  const fill = $('sp-fill');
+  if (pct === 0) {
+    fill.classList.add('indeterminate');
+    fill.style.width = '0%';
+  } else {
+    fill.classList.remove('indeterminate');
+    fill.style.width = pct + '%';
+  }
+  $('sp-label').textContent = pct === 0 ? 'Inicializuji…' : `${found} nalezeno  •  ${done}/${total} dotazů`;
+  $('s-count').style.display = '';
+  $('s-count').textContent = String(found);
+}
+function hideSearchProgress() {
+  $('search-progress').classList.remove('visible');
+  $('sp-fill').style.width = '0%';
+  $('s-count').style.display = 'none';
+}
+
+/* ── grid helpers ────────────────────────────────────────────────── */
+function createGridItem(img) {
+  const item = document.createElement('div');
+  item.className = `grid-item${img.selected ? '' : ' off'}`;
+  item.dataset.id = String(img.id);
+
+  const image = document.createElement('img');
+  image.src = img.src;
+  image.alt = img.alt || '';
+  image.className = 'loading';
+  image.onload  = () => image.classList.remove('loading');
+  image.onerror = () => { image.style.display = 'none'; };
+  image.setAttribute('loading', 'eager');
+  item.appendChild(image);
+
+  if (img.alt) {
+    const tip = document.createElement('div');
+    tip.className = 'alt-tip';
+    tip.textContent = img.alt;
+    item.appendChild(tip);
+  }
+
+  item.addEventListener('click', () => {
+    const idx = images.findIndex(i => String(i.id) === String(img.id));
+    if (idx !== -1) openLightbox(idx);
+  });
+  return item;
+}
+
+function renderGrid() {
+  const grid = $('image-grid');
+  grid.innerHTML = '';
+  images.forEach(img => grid.appendChild(createGridItem(img)));
+}
+
+/* Add a batch of images during streaming (no dedup full-replace) */
+function addImageBatch(newImgs) {
+  $('canvas-empty').classList.add('hidden');
+  showCanvasActions();
+  const grid = $('image-grid');
+  const seenSrcs = new Set(images.map(i => i.src));
+  newImgs.forEach(raw => {
+    if (seenSrcs.has(raw.src)) return;
+    seenSrcs.add(raw.src);
+    const img = { ...raw, selected: true };
+    images.push(img);
+    grid.appendChild(createGridItem(img));
+  });
+  updateCount();
+}
+
+/* Replace grid with final deduped list */
+function setFinalImages(imageList) {
+  images = imageList.map(img => ({ ...img, selected: true }));
+  renderGrid();
+  updateCount();
+  $('canvas-empty').classList.add('hidden');
+  showCanvasActions();
+}
+
+function showCanvasActions() {
+  $('btn-select-all').style.display   = '';
+  $('btn-deselect-all').style.display = '';
+  $('btn-dl').style.display           = '';
+}
+
+function updateCount() {
+  const sel = images.filter(i => i.selected).length;
+  $('btn-dl').textContent = `Stáhnout ${sel}`;
+  $('btn-dl').disabled = (sel === 0);
+  $('canvas-count').textContent = `${sel} / ${images.length}`;
+  if (currentQuery) {
+    $('canvas-title').innerHTML = `Výsledky pro <strong>${esc(currentQuery)}</strong>`;
+  }
+}
+
+function selectAll()   { images.forEach(i => i.selected = true);  renderGrid(); updateCount(); }
+function deselectAll() { images.forEach(i => i.selected = false); renderGrid(); updateCount(); }
+
+/* ── search ──────────────────────────────────────────────────────── */
+async function startSearch() {
+  let payload;
+  // clear previous results
+  images = [];
+  $('image-grid').innerHTML = '';
+  $('canvas-empty').classList.remove('hidden');
+  $('btn-select-all').style.display   = 'none';
+  $('btn-deselect-all').style.display = 'none';
+  $('btn-dl').style.display           = 'none';
+  $('canvas-title').textContent = 'Hledám…';
+  $('canvas-count').textContent = '';
+
+  if (mode === 'artist') {
+    const name = $('artist-name').value.trim();
+    if (!name) { addLine('Chyba: zadejte jméno umělce', 'err'); return; }
+    const chips = getActiveChips();
+    currentOutput = $('output-artist').value.trim();
+    currentQuery  = chips.length ? `${name} ${chips.join(' ')}` : name;
+    payload = { mode: 'artist', name, chips, count: parseInt($('count-artist').value) };
+  } else {
+    const query = $('pin-url').value.trim();
+    if (!query) { addLine('Chyba: zadejte Pinterest URL', 'err'); return; }
+    currentOutput = $('output-url').value.trim();
+    currentQuery  = query;
+    payload = { mode: 'scrape', query, count: parseInt($('count-url').value) };
+  }
+
+  clearLog();
+  addLine(`Hledám: "${currentQuery}"`, 'info');
+  addLine(`Cíl: ${payload.count} výsledků`, 'dim');
+  $('btn-search').classList.add('loading');
+  $('btn-search').disabled = true;
+  $('btn-label').textContent = 'Hledám…';
+  setStatus('running', 'Hledám…');
+  showSearchProgress(0, 0, 0, 0);
+  if (es) { es.close(); es = null; }
+
+  try {
+    const res  = await fetch('/api/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) { addLine(`Chyba: ${data.error}`, 'err'); resetSearch(); return; }
+
+    previewJobId = data.job_id;
+    const jobId  = data.job_id;
+    es = new EventSource(`/api/preview/stream/${jobId}`);
+    es.onmessage = async e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') {
+        addLine(msg.text, classify(msg.text));
+      } else if (msg.type === 'batch') {
+        addImageBatch(msg.images);
+        showSearchProgress(msg.pct, msg.found, msg.done, msg.total);
+        setStatus('running', `Hledám… ${msg.pct}%`);
+      } else if (msg.type === 'progress') {
+        showSearchProgress(msg.pct, msg.found, msg.done, msg.total);
+        setStatus('running', `Hledám… ${msg.pct}%`);
+      } else if (msg.type === 'preview_done') {
+        es.close(); es = null;
+        showSearchProgress(100, msg.count, '?', '?');
+        addLine(`Načítám finální výsledky (${msg.count})…`, 'dim');
+        try {
+          const r  = await fetch(`/api/preview/result/${jobId}`);
+          const rd = await r.json();
+          setFinalImages(rd.images);
+          addLine(`Hotovo — ${rd.images.length} výsledků.`, 'ok');
+          setStatus('done', `Hotovo · ${rd.images.length}`);
+        } catch (err) {
+          addLine(`Chyba při načítání výsledků: ${err.message}`, 'err');
+          setStatus('error', 'Chyba');
+        }
+        hideSearchProgress();
+        resetSearch();
+      } else if (msg.type === 'done') {
+        es.close(); es = null;
+        addLine('Hledání selhalo.', 'err');
+        hideSearchProgress();
+        setStatus('error', 'Selhalo');
+        resetSearch();
+      }
+    };
+    es.onerror = () => {
+      if (es) { es.close(); es = null; }
+      addLine('Chyba spojení.', 'err');
+      hideSearchProgress();
+      resetSearch();
+    };
+  } catch (err) {
+    addLine(`Síťová chyba: ${err.message}`, 'err');
+    resetSearch();
+  }
+}
+
+function resetSearch() {
+  $('btn-search').classList.remove('loading');
+  $('btn-search').disabled = false;
+  $('btn-label').textContent = mode === 'artist' ? 'Hledat' : 'Hledat / Scrape';
+}
+
+/* ── lightbox ─────────────────────────────────────────────────────── */
+function openLightbox(index) {
+  lbIndex = index;
+  updateLightbox();
+  $('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  $('lightbox').classList.remove('open');
+  lbIndex = -1;
+}
+function lbNav(dir) {
+  if (!images.length) return;
+  lbIndex = (lbIndex + dir + images.length) % images.length;
+  updateLightbox();
+}
+function updateLightbox() {
+  const img = images[lbIndex];
+  if (!img) return;
+  $('lb-img').src     = img.src;
+  $('lb-img').alt     = img.alt || '';
+  $('lb-alt').textContent     = img.alt || '';
+  $('lb-counter').textContent = `${lbIndex + 1} / ${images.length}`;
+  const btn = $('lb-select-btn');
+  if (img.selected) {
+    btn.textContent = '✓ Vybráno';
+    btn.className   = 'lb-select-btn selected';
+  } else {
+    btn.textContent = '✕ Vyloučeno';
+    btn.className   = 'lb-select-btn deselected';
+  }
+}
+function lbToggleSelect() {
+  const img = images[lbIndex];
+  if (!img) return;
+  img.selected = !img.selected;
+  // update grid item opacity
+  const el = document.querySelector(`.grid-item[data-id="${img.id}"]`);
+  if (el) el.classList.toggle('off', !img.selected);
+  updateLightbox();
+  updateCount();
+}
+
+// keyboard navigation
+document.addEventListener('keydown', e => {
+  if (!$('lightbox').classList.contains('open')) return;
+  if (e.key === 'Escape')      closeLightbox();
+  if (e.key === 'ArrowRight')  lbNav(1);
+  if (e.key === 'ArrowLeft')   lbNav(-1);
+});
+
+// close lightbox on overlay click
+$('lightbox').addEventListener('click', e => {
+  if (e.target === $('lightbox')) closeLightbox();
+});
+
+/* ── download ─────────────────────────────────────────────────────── */
+async function startDownloadIds(ids) {
+  if (!ids.length) return;
+  $('btn-dl').disabled = true;
+  $('dl-bar').classList.add('visible');
+  $('dl-dot').className   = 'dl-dot';
+  $('dl-text').textContent = `Stahuji ${ids.length} obrázků…`;
+
+  try {
+    const res  = await fetch('/api/download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        preview_job_id: previewJobId,
+        selected_ids:   ids,
+        output:         currentOutput,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      $('dl-text').textContent  = `Chyba: ${data.error}`;
+      $('dl-dot').className     = 'dl-dot error';
+      $('btn-dl').disabled      = false;
+      return;
+    }
+    downloadJobId = data.job_id;
+    const es2 = new EventSource(`/api/download/stream/${data.job_id}`);
+    es2.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') {
+        $('dl-text').textContent = msg.text;
+      } else if (msg.type === 'done') {
+        es2.close();
+        if (msg.status === 'done') {
+          $('dl-text').textContent = `✓ Hotovo! Uloženo do: ${currentOutput}`;
+          $('dl-dot').className    = 'dl-dot done';
+        } else {
+          $('dl-text').textContent = 'Stahování selhalo nebo bylo zastaveno.';
+          $('dl-dot').className    = 'dl-dot error';
+        }
+        $('btn-dl').disabled = false;
+      }
+    };
+    es2.onerror = () => {
+      es2.close();
+      $('dl-dot').className = 'dl-dot error';
+      $('btn-dl').disabled  = false;
+    };
+  } catch (err) {
+    $('dl-text').textContent = `Síťová chyba: ${err.message}`;
+    $('dl-dot').className    = 'dl-dot error';
+    $('btn-dl').disabled     = false;
+  }
+}
+
+function startDownload() {
+  const ids = images.filter(i => i.selected).map(i => i.id);
+  startDownloadIds(ids);
+}
+
+async function downloadSingle() {
+  const img = images[lbIndex];
+  if (!img || !previewJobId) return;
+  $('lb-dl-btn').disabled = true;
+  $('lb-dl-btn').textContent = '…';
+  await startDownloadIds([img.id]);
+  $('lb-dl-btn').disabled = false;
+  $('lb-dl-btn').innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="12" y1="3" x2="12" y2="15"/><polyline points="7 10 12 15 17 10"/><line x1="4" y1="21" x2="20" y2="21"/></svg> Stáhnout';
+}
+
+async function stopDownload() {
+  if (downloadJobId) {
+    try { await fetch(`/api/stop/${downloadJobId}`, { method: 'POST' }); } catch {}
+  }
+  $('dl-bar').classList.remove('visible');
+  $('btn-dl').disabled = false;
+}
+
+/* ── login modal ─────────────────────────────────────────────────── */
+function openLoginModal()  { $('modal-overlay').classList.add('open'); }
+function closeLoginModal(e) {
+  if (e && e.target !== $('modal-overlay')) return;
+  $('modal-overlay').classList.remove('open');
+}
+function switchLoginTab(tab) {
+  const isChrome = tab === 'chrome';
+  $('tab-chrome').classList.toggle('active', isChrome);
+  $('tab-playwright').classList.toggle('active', !isChrome);
+  $('modal-chrome-panel').style.display     = isChrome ? '' : 'none';
+  $('modal-playwright-panel').style.display = isChrome ? 'none' : '';
+  $('modal-chrome-actions').style.display   = isChrome ? '' : 'none';
+  $('modal-log').innerHTML = '';
+  $('modal-log').classList.remove('visible');
+}
+function setLoggedIn(yes) {
+  $('badge-dot').className   = `b-dot ${yes ? 'on' : 'off'}`;
+  $('badge-label').className = `b-label ${yes ? 'on' : 'off'}`;
+  $('badge-label').textContent = yes ? 'Přihlášen' : 'Nepřihlášen';
+  $('btn-logout').style.display = yes ? '' : 'none';
+}
+function modalLog(text, cls='') {
+  const box = $('modal-log');
+  box.classList.add('visible');
+  const line = document.createElement('div');
+  line.style.color = cls === 'ok' ? 'var(--ok)' : cls === 'err' ? 'var(--err)' : '';
+  line.textContent = '› ' + text;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+async function openPinterestInChrome() {
+  $('modal-log').innerHTML = '';
+  try {
+    await fetch('/api/login/open-chrome', { method: 'POST' });
+    modalLog('Pinterest otevřen. Přihlaste se, pak klikněte Extrahovat cookies.', '');
+    $('chrome-step2').style.display = '';
+    $('btn-open-chrome').textContent = 'Znovu otevřít Pinterest';
+  } catch (err) { modalLog(`Chyba: ${err.message}`, 'err'); }
+}
+async function extractChromeCookies() {
+  $('btn-extract').disabled = true;
+  $('btn-extract').textContent = 'Extrahuji…';
+  $('modal-log').innerHTML = '';
+  try {
+    const res  = await fetch('/api/login/extract-chrome', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      modalLog(data.error || 'Extrakce selhala.', 'err');
+    } else {
+      modalLog(`✓ Uloženo ${data.count} cookies. Přihlášení úspěšné!`, 'ok');
+      setLoggedIn(true);
+      $('modal-sub').textContent = 'Cookies jsou uloženy — Pinterest API přijme více výsledků.';
+    }
+  } catch (err) { modalLog(`Síťová chyba: ${err.message}`, 'err'); }
+  $('btn-extract').disabled = false;
+  $('btn-extract').textContent = 'Extrahovat cookies z Chrome';
+}
+async function doLogin() {
+  const email = $('login-email').value.trim();
+  const pass  = $('login-pass').value;
+  const wait  = parseInt($('wait-slider').value);
+  if (!email || !pass) { modalLog('Zadejte email a heslo.', 'err'); return; }
+  $('btn-modal-login').disabled = true;
+  $('modal-btn-label').textContent = 'Přihlašuji…';
+  $('modal-log').innerHTML = '';
+  modalLog('Otevírám prohlížeč…', '');
+  try {
+    const res  = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass, wait }),
+    });
+    const data = await res.json();
+    if (!res.ok) { modalLog(data.error, 'err'); resetLoginBtn(); return; }
+    const es3 = new EventSource(`/api/login/stream/${data.job_id}`);
+    es3.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') {
+        modalLog(msg.text, /error|fail|chyba/i.test(msg.text) ? 'err' : '');
+      } else if (msg.type === 'done') {
+        es3.close();
+        if (msg.status === 'done') {
+          modalLog('✓ Přihlášení úspěšné! Cookies uloženy.', 'ok');
+          setLoggedIn(true);
+          $('modal-sub').textContent = 'Cookies jsou uloženy — Pinterest API přijme více výsledků.';
+        } else {
+          modalLog('Přihlášení selhalo. Zkuste znovu nebo zvyšte čekací čas.', 'err');
+        }
+        resetLoginBtn();
+      }
+    };
+    es3.onerror = () => { es3.close(); modalLog('Chyba spojení.', 'err'); resetLoginBtn(); };
+  } catch (err) { modalLog(`Síťová chyba: ${err.message}`, 'err'); resetLoginBtn(); }
+}
+function resetLoginBtn() {
+  $('btn-modal-login').disabled = false;
+  $('modal-btn-label').textContent = 'Přihlásit se';
+}
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' });
+  setLoggedIn(false);
+  $('modal-sub').textContent = 'Přihlášení výrazně zvýší počet dostupných výsledků.';
+  $('modal-log').innerHTML = '';
+  $('modal-log').classList.remove('visible');
+  $('chrome-step2').style.display = 'none';
+  $('btn-open-chrome').textContent = 'Otevřít Pinterest v\u00a0Chrome';
+  modalLog('Cookies smazány.', '');
+}
+
+/* ── init ─────────────────────────────────────────────────────────── */
+addLine('Pinterest DL připraveno.', 'dim');
+addLine('Zadejte jméno umělce a klikněte Hledat.', 'dim');
+</script>
+</body>
+</html>
