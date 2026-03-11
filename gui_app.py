@@ -20,7 +20,6 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from pinterest_dl import PinterestDL
-from pinterest_dl.common import io
 from pinterest_dl.domain.media import PinterestMedia
 from pinterest_dl.scrapers import operations
 
@@ -28,19 +27,28 @@ CLOUD_MODE = any(
     os.getenv(name)
     for name in ("RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID")
 )
-APP_ROOT = Path(os.getenv("PINTEREST_DL_APP_ROOT", "/tmp/pinterest-dl-app"))
+LOCAL_APP_ROOT = Path.home() / ".pinterest-dl-app"
+APP_ROOT = Path(
+    os.getenv(
+        "PINTEREST_DL_APP_ROOT",
+        "/tmp/pinterest-dl-app" if CLOUD_MODE else str(LOCAL_APP_ROOT),
+    )
+)
 APP_ROOT.mkdir(parents=True, exist_ok=True)
 PLAYWRIGHT_BROWSERS_PATH = str(
     Path(os.getenv("PLAYWRIGHT_BROWSERS_PATH", str(APP_ROOT / "playwright-browsers")))
 )
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", PLAYWRIGHT_BROWSERS_PATH)
 SSE_PING_INTERVAL = int(os.getenv("PINTEREST_DL_SSE_PING_INTERVAL", "10"))
+AUTO_LOGIN_WAIT = int(os.getenv("PINTEREST_DL_AUTO_LOGIN_WAIT", "20"))
 DEFAULT_OUTPUT = os.getenv(
     "PINTEREST_DL_OUTPUT_DIR",
     str((APP_ROOT / "downloads") if CLOUD_MODE else (Path.home() / "Downloads" / "pinterest-dl")),
 )
 COOKIES_FILE = os.getenv("PINTEREST_DL_COOKIES_FILE", str(APP_ROOT / "cookies.json"))
 PINTEREST_DL_CMD = os.getenv("PINTEREST_DL_CMD", f"{sys.executable} -m pinterest_dl.cli")
+SETTINGS_FILE = APP_ROOT / "settings.json"
+KEYCHAIN_SERVICE = os.getenv("PINTEREST_DL_KEYCHAIN_SERVICE", "pinterest-dl")
 
 app = Flask(__name__)
 
@@ -81,17 +89,217 @@ def _cookies_authenticated(cookies: list[dict]) -> bool:
     return False
 
 
+def _load_settings() -> dict:
+    if not SETTINGS_FILE.exists():
+        return {}
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_settings(data: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+
+
+def _remember_email(email: str) -> None:
+    settings = _load_settings()
+    settings["saved_email"] = email.strip()
+    _save_settings(settings)
+
+
+def _remember_password(password: str) -> None:
+    settings = _load_settings()
+    settings["saved_password"] = password
+    _save_settings(settings)
+
+
+def _forget_email() -> None:
+    settings = _load_settings()
+    settings.pop("saved_email", None)
+    settings.pop("saved_password", None)
+    _save_settings(settings)
+
+
+def _saved_email() -> str:
+    return str(_load_settings().get("saved_email", "")).strip()
+
+
+def _saved_password() -> str:
+    return str(_load_settings().get("saved_password", ""))
+
+
+def _save_password_to_keychain(email: str, password: str) -> None:
+    if sys.platform != "darwin" or not email or not password:
+        return
+    subprocess.run(
+        [
+            "security",
+            "add-generic-password",
+            "-a",
+            email,
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-w",
+            password,
+            "-U",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def _read_password_from_keychain(email: str) -> str:
+    if sys.platform != "darwin" or not email:
+        return ""
+    result = subprocess.run(
+        [
+            "security",
+            "find-generic-password",
+            "-a",
+            email,
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-w",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _delete_password_from_keychain(email: str) -> None:
+    if sys.platform != "darwin" or not email:
+        return
+    subprocess.run(
+        [
+            "security",
+            "delete-generic-password",
+            "-a",
+            email,
+            "-s",
+            KEYCHAIN_SERVICE,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _credential_available() -> bool:
+    email = _saved_email()
+    if not email:
+        return False
+    if sys.platform == "darwin" and not CLOUD_MODE:
+        return bool(_read_password_from_keychain(email))
+    return bool(_saved_password())
+
+
+def _load_cookies() -> list[dict]:
+    if not Path(COOKIES_FILE).exists():
+        return []
+    try:
+        with open(COOKIES_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload if isinstance(payload, list) else []
+    except Exception:
+        return []
+
+
+def _write_cookies(cookie_list: list[dict]) -> None:
+    Path(COOKIES_FILE).parent.mkdir(parents=True, exist_ok=True)
+    with open(COOKIES_FILE, "w", encoding="utf-8") as handle:
+        json.dump(cookie_list, handle, indent=2)
+
+
+def _has_valid_session() -> bool:
+    return _cookies_authenticated(_load_cookies())
+
+
+def _extract_chrome_cookies() -> list[dict]:
+    import browser_cookie3  # type: ignore
+
+    raw_cookies = browser_cookie3.chrome(domain_name=".pinterest.com")
+    cookie_list: list[dict] = []
+    for cookie in raw_cookies:
+        entry: dict = {
+            "name": cookie.name,
+            "value": cookie.value,
+            "domain": cookie.domain,
+            "path": cookie.path,
+            "secure": bool(cookie.secure),
+        }
+        if cookie.expires:
+            entry["expiry"] = cookie.expires
+        cookie_list.append(entry)
+    return cookie_list
+
+
+def _collect_browser_cookies(
+    email: str,
+    password: str,
+    wait: int,
+    q: queue.Queue[dict] | None = None,
+    *,
+    headless: bool,
+) -> list[dict]:
+    def log(text: str) -> None:
+        if q is not None:
+            _job_log(q, text)
+
+    log("Spoustim Playwright login...")
+    _ensure_playwright_browser(q or queue.Queue())
+    scraper = PinterestDL.with_browser(
+        browser_type="chromium",
+        headless=headless,
+        incognito=True,
+        verbose=False,
+        enable_images=True,
+    )
+    try:
+        scraper.login(email, password)
+        log(f"Cekam {wait} s na dokonceni autentizace...")
+        time.sleep(wait)
+        cookies = scraper.browser.context.cookies()  # type: ignore[assignment]
+        selenium_cookies: list[dict] = []
+        for cookie in cookies:
+            entry = {
+                "name": cookie.get("name", ""),
+                "value": cookie.get("value", ""),
+                "domain": cookie.get("domain", ""),
+                "path": cookie.get("path", "/"),
+                "secure": cookie.get("secure", False),
+            }
+            if "expires" in cookie and cookie["expires"] > 0:
+                entry["expiry"] = int(cookie["expires"])
+            selenium_cookies.append(entry)
+        return selenium_cookies
+    finally:
+        try:
+            scraper.close()
+        except Exception:
+            pass
+
+
 # ── pages ──────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    logged_in = Path(COOKIES_FILE).exists()
+    logged_in = _has_valid_session()
     return render_template(
         "index.html",
         default_output=DEFAULT_OUTPUT,
         logged_in=logged_in,
         cloud_mode=CLOUD_MODE,
         host_label=request.host,
+        saved_email=_saved_email(),
+        auto_login_available=(_credential_available() or (not CLOUD_MODE and sys.platform == "darwin")),
     )
 
 
@@ -110,19 +318,23 @@ def favicon():
 def api_login_status():
     return jsonify(
         {
-            "logged_in": Path(COOKIES_FILE).exists(),
+            "logged_in": _has_valid_session(),
             "cookies_file": COOKIES_FILE,
             "cloud_mode": CLOUD_MODE,
+            "saved_email": _saved_email(),
+            "credential_available": _credential_available(),
+            "auto_login_available": (_credential_available() or (not CLOUD_MODE and sys.platform == "darwin")),
         }
     )
 
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    data     = request.get_json(force=True)
-    email    = (data.get("email") or "").strip()
+    data = request.get_json(force=True)
+    email = (data.get("email") or "").strip()
     password = (data.get("password") or "")
-    wait     = max(10, min(60, int(data.get("wait", 20))))
+    wait = max(10, min(60, int(data.get("wait", 20))))
+    remember = bool(data.get("remember", not CLOUD_MODE))
 
     if not email or not password:
         return jsonify({"error": "Email a heslo jsou povinné"}), 400
@@ -134,38 +346,20 @@ def api_login():
     if CLOUD_MODE:
         def worker():
             status = "error"
-            scraper = None
             try:
                 _job_log(q, "Zkousim automaticke prihlaseni pres headless Chromium…")
-                _ensure_playwright_browser(q)
-                scraper = PinterestDL.with_browser(
-                    browser_type="chromium",
+                selenium_cookies = _collect_browser_cookies(
+                    email,
+                    password,
+                    wait,
+                    q,
                     headless=True,
-                    incognito=True,
-                    verbose=False,
-                    enable_images=True,
                 )
-                scraper.login(email, password)
-                _job_log(q, f"Cekam {wait} s na dokonceni autentizace…")
-                time.sleep(wait)
-                cookies = scraper.browser.context.cookies()  # type: ignore[assignment]
-                selenium_cookies = []
-                for cookie in cookies:
-                    entry = {
-                        "name": cookie.get("name", ""),
-                        "value": cookie.get("value", ""),
-                        "domain": cookie.get("domain", ""),
-                        "path": cookie.get("path", "/"),
-                        "secure": cookie.get("secure", False),
-                    }
-                    if "expires" in cookie and cookie["expires"] > 0:
-                        entry["expiry"] = int(cookie["expires"])
-                    selenium_cookies.append(entry)
-
-                Path(COOKIES_FILE).parent.mkdir(parents=True, exist_ok=True)
-                io.write_json(selenium_cookies, COOKIES_FILE, 2)
-
+                _write_cookies(selenium_cookies)
                 if _cookies_authenticated(selenium_cookies):
+                    if remember:
+                        _remember_email(email)
+                        _remember_password(password)
                     _job_log(q, "✓ Prihlaseni uspesne, cookies ulozeny.")
                     status = "done"
                 else:
@@ -176,11 +370,6 @@ def api_login():
             except Exception as exc:
                 _job_log(q, f"Chyba: {exc}")
             finally:
-                if scraper:
-                    try:
-                        scraper.close()
-                    except Exception:
-                        pass
                 _jobs[job_id]["status"] = status
                 q.put({"type": "done", "status": status})
 
@@ -216,10 +405,80 @@ def api_login():
             proc.stdout.close()
             rc     = proc.wait()
             status = "done" if rc == 0 else "error"
+            if status == "done" and _has_valid_session() and remember:
+                _remember_email(email)
+                if sys.platform == "darwin":
+                    try:
+                        _save_password_to_keychain(email, password)
+                        q.put({"type": "log", "text": "Prihlaseni ulozeno do tohoto Macu."})
+                    except Exception as exc:
+                        q.put({"type": "log", "text": f"Poznamka: credential storage selhal: {exc}"})
+                else:
+                    _remember_password(password)
+                    q.put({"type": "log", "text": "Prihlaseni ulozeno v nastaveni aplikace."})
         except Exception as exc:
             q.put({"type": "log", "text": f"Chyba: {exc}"})
         _jobs[job_id]["status"] = status
         q.put({"type": "done", "status": status})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/login/auto", methods=["POST"])
+def api_login_auto():
+    job_id = uuid.uuid4().hex
+    q: queue.Queue[dict] = queue.Queue()
+    _jobs[job_id] = {"queue": q, "status": "running", "proc": None}
+
+    def worker():
+        status = "error"
+        try:
+            if _has_valid_session():
+                _job_log(q, "Existujici Pinterest session je porad platna.")
+                status = "done"
+            else:
+                try:
+                    _job_log(q, "Zkousim obnovit relaci z lokalniho Chrome...")
+                    cookie_list = _extract_chrome_cookies()
+                    if _cookies_authenticated(cookie_list):
+                        _write_cookies(cookie_list)
+                        _job_log(q, "✓ Relace obnovena z Chrome cookies.")
+                        status = "done"
+                except ImportError:
+                    _job_log(q, "browser-cookie3 neni nainstalovan; preskakuji Chrome restore.")
+                except Exception as exc:
+                    _job_log(q, f"Chrome restore selhal: {exc}")
+
+            if status != "done":
+                email = _saved_email()
+                if sys.platform == "darwin" and not CLOUD_MODE:
+                    password = _read_password_from_keychain(email)
+                else:
+                    password = _saved_password()
+                if email and password:
+                    _job_log(q, f"Zkousim automaticky login pro {email}...")
+                    cookie_list = _collect_browser_cookies(
+                        email,
+                        password,
+                        AUTO_LOGIN_WAIT,
+                        q,
+                        headless=True,
+                    )
+                    if _cookies_authenticated(cookie_list):
+                        _write_cookies(cookie_list)
+                        _job_log(q, "✓ Relace obnovena z ulozenych prihlasovacich udaju.")
+                        status = "done"
+                    else:
+                        _job_log(q, "Ulozene prihlasovaci udaje nevratily platnou session.")
+
+            if status != "done":
+                _job_log(q, "Automaticke obnoveni nebylo dostupne.")
+        except Exception as exc:
+            _job_log(q, f"Chyba: {exc}")
+        finally:
+            _jobs[job_id]["status"] = status
+            q.put({"type": "done", "status": status})
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"job_id": job_id})
@@ -255,6 +514,9 @@ def api_logout():
         Path(COOKIES_FILE).unlink(missing_ok=True)
     except Exception:
         pass
+    email = _saved_email()
+    _forget_email()
+    _delete_password_from_keychain(email)
     return jsonify({"ok": True})
 
 
@@ -272,9 +534,7 @@ def api_login_upload():
     if not isinstance(payload, list):
         return jsonify({"error": "Cookies soubor musi obsahovat seznam cookie objektu."}), 400
 
-    Path(COOKIES_FILE).parent.mkdir(parents=True, exist_ok=True)
-    with open(COOKIES_FILE, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
+    _write_cookies(payload)
 
     return jsonify({"ok": True, "count": len(payload)})
 
@@ -294,27 +554,12 @@ def api_login_extract_chrome():
     if CLOUD_MODE:
         return jsonify({"error": "Extrakce z lokalniho Chrome neni v Railway dostupna."}), 400
     try:
-        import browser_cookie3  # type: ignore
-
-        raw_cookies = browser_cookie3.chrome(domain_name=".pinterest.com")
-        cookie_list = []
-        for c in raw_cookies:
-            entry: dict = {
-                "name": c.name,
-                "value": c.value,
-                "domain": c.domain,
-                "path": c.path,
-                "secure": bool(c.secure),
-            }
-            if c.expires:
-                entry["expiry"] = c.expires
-            cookie_list.append(entry)
+        cookie_list = _extract_chrome_cookies()
 
         if not cookie_list:
             return jsonify({"error": "Žádné Pinterest cookies nenalezeny v Chrome. Prosím přihlaste se do Pinterest v prohlížeči a zkuste znovu."}), 404
 
-        with open(COOKIES_FILE, "w") as f:
-            json.dump(cookie_list, f, indent=2)
+        _write_cookies(cookie_list)
 
         return jsonify({"ok": True, "count": len(cookie_list)})
 

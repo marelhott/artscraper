@@ -531,6 +531,11 @@
     }
     .btn-logout:hover { color: var(--err); border-color: var(--err); }
     .modal-hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
+    .modal-check {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--muted);
+    }
+    .modal-check input { accent-color: var(--accent); }
     .btn-open-chrome {
       width: 100%; padding: 9px; background: var(--accent); color: #fff;
       border: none; border-radius: 6px; font-family: 'Inter', sans-serif;
@@ -564,8 +569,8 @@
     <div class="modal">
       <div class="modal-title">Přihlásit se</div>
       <div class="modal-sub" id="modal-sub">
-        {% if logged_in %}Cookies jsou uloženy — Pinterest API přijme více výsledků.
-        {% else %}Přihlášení výrazně zvýší počet dostupných výsledků.{% endif %}
+        {% if logged_in %}Relace je uložená lokálně a aplikace ji bude dál používat.
+        {% else %}Aplikace si může přihlášení pamatovat lokálně, takže ho nemusíte řešit pokaždé.{% endif %}
       </div>
       <div class="modal-tabs" id="modal-tabs">
         <button class="modal-tab active" id="tab-chrome" onclick="switchLoginTab('chrome')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> {% if cloud_mode %}Automaticky{% else %}Chrome{% endif %}</button>
@@ -579,20 +584,24 @@
         <p class="modal-hint">Nejdřív zkusíme automatický login přes headless Chromium na Railway. Pokud Pinterest vrátí CAPTCHA nebo 2FA, použijte hned pod tím upload cookies JSON.</p>
         <div class="modal-row">
           <label class="modal-label">Email</label>
-          <input class="modal-input" type="email" id="login-email" placeholder="váš@email.com" autocomplete="email">
+          <input class="modal-input" type="email" id="cloud-login-email" name="email" placeholder="váš@email.com" autocomplete="email" value="{{ saved_email }}">
         </div>
         <div class="modal-row">
           <label class="modal-label">Heslo</label>
-          <input class="modal-input" type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+          <input class="modal-input" type="password" id="cloud-login-pass" name="password" placeholder="••••••••" autocomplete="current-password">
         </div>
         <div class="modal-row">
           <label class="modal-label">Čekací čas (sek)</label>
           <div class="modal-wait-row">
-            <input type="range" id="wait-slider" min="10" max="60" value="20" step="5"
-                   oninput="$('wait-val').textContent=this.value">
-            <div class="modal-wait-val" id="wait-val">20</div>
+            <input type="range" id="cloud-wait-slider" min="10" max="60" value="20" step="5"
+                   oninput="$('cloud-wait-val').textContent=this.value">
+            <div class="modal-wait-val" id="cloud-wait-val">20</div>
           </div>
         </div>
+        <label class="modal-check">
+          <input type="checkbox" id="cloud-remember-login" checked>
+          <span>Pamatovat si přihlášení pro tuto appku</span>
+        </label>
         <div class="modal-actions" style="margin-top:14px">
           <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
           <button class="btn-modal-login" id="btn-modal-login" onclick="doLogin()">
@@ -605,8 +614,14 @@
           Nahrát cookies JSON
         </button>
         {% else %}
-        <p class="modal-hint">Otevře Pinterest v normálním Chrome — přihlaste se i přes Google. Poté klikněte na <em>Extrahovat cookies</em>.</p>
-        <button class="btn-open-chrome" id="btn-open-chrome" onclick="openPinterestInChrome()">
+        <p class="modal-hint">Nejdřív zkusíme obnovit přihlášení automaticky z vašeho Chrome. Když to nestačí, otevřete Pinterest normálně v Chrome a aplikace si relaci uloží lokálně.</p>
+        {% if auto_login_available %}
+        <button class="btn-open-chrome" id="btn-auto-login" onclick="autoLogin()">
+          Obnovit přihlášení automaticky
+        </button>
+        <p class="modal-hint" style="margin-top:10px">Použije uloženou relaci z Chrome nebo poslední uložené přihlašovací údaje z tohoto Macu.</p>
+        {% endif %}
+        <button class="btn-open-chrome" id="btn-open-chrome" onclick="openPinterestInChrome()" {% if auto_login_available %}style="margin-top:10px"{% endif %}>
           Otevřít Pinterest v&nbsp;Chrome
         </button>
         <div id="chrome-step2" style="display:none;margin-top:12px">
@@ -622,20 +637,24 @@
       <div class="modal-fields" id="modal-playwright-panel" style="display:none">
         <div class="modal-row">
           <label class="modal-label">Email</label>
-          <input class="modal-input" type="email" id="login-email" placeholder="váš@email.com" autocomplete="email">
+          <input class="modal-input" type="email" id="playwright-login-email" name="email" placeholder="váš@email.com" autocomplete="email" value="{{ saved_email }}">
         </div>
         <div class="modal-row">
           <label class="modal-label">Heslo</label>
-          <input class="modal-input" type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+          <input class="modal-input" type="password" id="playwright-login-pass" name="password" placeholder="••••••••" autocomplete="current-password">
         </div>
         <div class="modal-row">
           <label class="modal-label">Čekací čas (sek)</label>
           <div class="modal-wait-row">
-            <input type="range" id="wait-slider" min="10" max="60" value="20" step="5"
-                   oninput="$('wait-val').textContent=this.value">
-            <div class="modal-wait-val" id="wait-val">20</div>
+            <input type="range" id="playwright-wait-slider" min="10" max="60" value="20" step="5"
+                   oninput="$('playwright-wait-val').textContent=this.value">
+            <div class="modal-wait-val" id="playwright-wait-val">20</div>
           </div>
         </div>
+        <label class="modal-check">
+          <input type="checkbox" id="playwright-remember-login" checked>
+          <span>Pamatovat si přihlášení na tomto Macu</span>
+        </label>
         <div class="modal-actions" style="margin-top:14px">
           <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
           <button class="btn-modal-login" id="btn-modal-login" onclick="doLogin()">
@@ -1288,6 +1307,35 @@ function setLoggedIn(yes) {
   $('badge-label').textContent = yes ? 'Přihlášen' : 'Nepřihlášen';
   $('btn-logout').style.display = yes ? '' : 'none';
 }
+function updateSavedEmail(email) {
+  if ($('cloud-login-email')) $('cloud-login-email').value = email || '';
+  if ($('playwright-login-email')) $('playwright-login-email').value = email || '';
+}
+function getLoginElements() {
+  if (window.CLOUD_MODE) {
+    return {
+      email: $('cloud-login-email'),
+      password: $('cloud-login-pass'),
+      wait: $('cloud-wait-slider'),
+      remember: $('cloud-remember-login'),
+    };
+  }
+  const chromeVisible = $('modal-chrome-panel').style.display !== 'none';
+  if (!chromeVisible && $('modal-playwright-panel')) {
+    return {
+      email: $('playwright-login-email'),
+      password: $('playwright-login-pass'),
+      wait: $('playwright-wait-slider'),
+      remember: $('playwright-remember-login'),
+    };
+  }
+  return {
+    email: $('cloud-login-email') || $('playwright-login-email'),
+    password: $('cloud-login-pass') || $('playwright-login-pass'),
+    wait: $('cloud-wait-slider') || $('playwright-wait-slider'),
+    remember: $('cloud-remember-login') || $('playwright-remember-login'),
+  };
+}
 function modalLog(text, cls='') {
   const box = $('modal-log');
   box.classList.add('visible');
@@ -1318,7 +1366,7 @@ async function extractChromeCookies() {
     } else {
       modalLog(`✓ Uloženo ${data.count} cookies. Přihlášení úspěšné!`, 'ok');
       setLoggedIn(true);
-      $('modal-sub').textContent = 'Cookies jsou uloženy — Pinterest API přijme více výsledků.';
+      $('modal-sub').textContent = 'Relace je uložená lokálně a aplikace ji bude dál používat.';
     }
   } catch (err) { modalLog(`Síťová chyba: ${err.message}`, 'err'); }
   $('btn-extract').disabled = false;
@@ -1340,7 +1388,7 @@ async function uploadCookiesFile() {
     } else {
       modalLog(`✓ Uloženo ${data.count} cookies. Přihlášení úspěšné!`, 'ok');
       setLoggedIn(true);
-      $('modal-sub').textContent = 'Cookies jsou uloženy — Pinterest API přijme více výsledků.';
+      $('modal-sub').textContent = 'Relace je uložená lokálně a aplikace ji bude dál používat.';
     }
   } catch (err) {
     modalLog(`Síťová chyba: ${err.message}`, 'err');
@@ -1349,9 +1397,11 @@ async function uploadCookiesFile() {
   $('btn-upload-cookies').textContent = 'Nahrát cookies JSON';
 }
 async function doLogin() {
-  const email = $('login-email').value.trim();
-  const pass  = $('login-pass').value;
-  const wait  = parseInt($('wait-slider').value);
+  const fields = getLoginElements();
+  const email = fields.email ? fields.email.value.trim() : '';
+  const pass  = fields.password ? fields.password.value : '';
+  const wait  = fields.wait ? parseInt(fields.wait.value) : 20;
+  const remember = fields.remember ? fields.remember.checked : true;
   if (!email || !pass) { modalLog('Zadejte email a heslo.', 'err'); return; }
   $('btn-modal-login').disabled = true;
   $('modal-btn-label').textContent = 'Přihlašuji…';
@@ -1360,7 +1410,7 @@ async function doLogin() {
   try {
     const res  = await fetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass, wait }),
+      body: JSON.stringify({ email, password: pass, wait, remember }),
     });
     const data = await res.json();
     if (!res.ok) { modalLog(data.error, 'err'); resetLoginBtn(); return; }
@@ -1374,7 +1424,8 @@ async function doLogin() {
         if (msg.status === 'done') {
           modalLog('✓ Přihlášení úspěšné! Cookies uloženy.', 'ok');
           setLoggedIn(true);
-          $('modal-sub').textContent = 'Cookies jsou uloženy — Pinterest API přijme více výsledků.';
+          updateSavedEmail(email);
+          $('modal-sub').textContent = 'Relace je uložená lokálně a aplikace ji bude dál používat.';
         } else {
           modalLog('Přihlášení selhalo. Zkuste znovu nebo zvyšte čekací čas.', 'err');
         }
@@ -1384,6 +1435,65 @@ async function doLogin() {
     es3.onerror = () => { es3.close(); modalLog('Chyba spojení.', 'err'); resetLoginBtn(); };
   } catch (err) { modalLog(`Síťová chyba: ${err.message}`, 'err'); resetLoginBtn(); }
 }
+async function autoLogin(silent = false) {
+  const button = $('btn-auto-login');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Obnovuji…';
+  }
+  if (!silent) {
+    $('modal-log').innerHTML = '';
+    modalLog('Zkouším obnovit přihlášení…', '');
+  } else {
+    addLine('Obnovuji Pinterest přihlášení…', 'dim');
+  }
+  try {
+    const res = await fetch('/api/login/auto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (!silent) modalLog(data.error || 'Automatické obnovení selhalo.', 'err');
+      return false;
+    }
+    return await new Promise(resolve => {
+      const esAuto = new EventSource(`/api/login/stream/${data.job_id}`);
+      esAuto.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'log') {
+          if (!silent) modalLog(msg.text, /error|fail|chyba/i.test(msg.text) ? 'err' : '');
+          else addLine(msg.text, classify(msg.text));
+        } else if (msg.type === 'done') {
+          esAuto.close();
+          if (msg.status === 'done') {
+            setLoggedIn(true);
+            $('modal-sub').textContent = 'Relace je uložená lokálně a aplikace ji bude dál používat.';
+            if (!silent) modalLog('✓ Přihlášení obnoveno.', 'ok');
+            resolve(true);
+          } else {
+            if (!silent) modalLog('Automatické obnovení nebylo dostupné.', 'err');
+            resolve(false);
+          }
+        }
+      };
+      esAuto.onerror = () => {
+        esAuto.close();
+        if (!silent) modalLog('Chyba spojení.', 'err');
+        resolve(false);
+      };
+    });
+  } catch (err) {
+    if (!silent) modalLog(`Síťová chyba: ${err.message}`, 'err');
+    return false;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Obnovit přihlášení automaticky';
+    }
+  }
+}
 function resetLoginBtn() {
   $('btn-modal-login').disabled = false;
   $('modal-btn-label').textContent = window.CLOUD_MODE ? 'Automaticky přihlásit' : 'Přihlásit se';
@@ -1391,7 +1501,8 @@ function resetLoginBtn() {
 async function doLogout() {
   await fetch('/api/logout', { method: 'POST' });
   setLoggedIn(false);
-  $('modal-sub').textContent = 'Přihlášení výrazně zvýší počet dostupných výsledků.';
+  updateSavedEmail('');
+  $('modal-sub').textContent = 'Aplikace je odhlášená a uložené přihlášení bylo odstraněno.';
   $('modal-log').innerHTML = '';
   $('modal-log').classList.remove('visible');
   if ($('chrome-step2')) $('chrome-step2').style.display = 'none';
@@ -1404,6 +1515,18 @@ async function doLogout() {
 addLine('Pinterest DL připraveno.', 'dim');
 addLine('Zadejte jméno umělce a klikněte Hledat.', 'dim');
 window.CLOUD_MODE = {{ 'true' if cloud_mode else 'false' }};
+window.AUTO_LOGIN_AVAILABLE = {{ 'true' if auto_login_available else 'false' }};
+(async () => {
+  try {
+    const res = await fetch('/api/login/status');
+    const data = await res.json();
+    setLoggedIn(Boolean(data.logged_in));
+    updateSavedEmail(data.saved_email || '');
+    if (!data.logged_in && data.auto_login_available) {
+      await autoLogin(true);
+    }
+  } catch {}
+})();
 </script>
 </body>
 </html>
