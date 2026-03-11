@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-dynamic = ["version"]
 name = "pinterest-dl"
+version = "0.0.0.dev0"
 description = "An unofficial Pinterest image downloader"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -19,6 +19,8 @@ classifiers = [
     "Environment :: Console",
 ]
 dependencies = [
+    "flask>=3.0.0",
+    "gunicorn>=23.0.0",
     "playwright>=1.40.0",
     "selenium>=4.26.1",
     "tqdm",
@@ -42,9 +44,6 @@ pin-dl = "pinterest_dl.cli:main"
 [project.urls]
 Homepage = "https://github.com/sean1832/pinterest-dl"
 Issues = "https://github.com/sean1832/pinterest-dl/issues"
-
-[tool.setuptools.dynamic]
-version = { attr = "pinterest_dl.__version__" }
 
 [tool.setuptools]
 packages = { find = { include = ["pinterest_dl*"] } }

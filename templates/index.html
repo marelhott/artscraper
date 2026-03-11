@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pinterest DL</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -547,7 +549,7 @@
   <div class="topbar">
     <div class="topbar-logo">Pinterest <span class="topbar-logo-dl">DL</span></div>
     <div class="topbar-sep"></div>
-    <span class="topbar-addr">localhost:5050</span>
+    <span class="topbar-addr">{{ host_label }}</span>
     <div class="topbar-spacer"></div>
     <div class="login-badge" id="login-badge" onclick="openLoginModal()">
       <div class="b-dot {% if logged_in %}on{% else %}off{% endif %}" id="badge-dot"></div>
@@ -566,11 +568,43 @@
         {% else %}Přihlášení výrazně zvýší počet dostupných výsledků.{% endif %}
       </div>
       <div class="modal-tabs" id="modal-tabs">
-        <button class="modal-tab active" id="tab-chrome"     onclick="switchLoginTab('chrome')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Chrome</button>
-        <button class="modal-tab"        id="tab-playwright" onclick="switchLoginTab('playwright')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Playwright</button>
+        <button class="modal-tab active" id="tab-chrome" onclick="switchLoginTab('chrome')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> {% if cloud_mode %}Automaticky{% else %}Chrome{% endif %}</button>
+        {% if not cloud_mode %}
+        <button class="modal-tab" id="tab-playwright" onclick="switchLoginTab('playwright')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Playwright</button>
+        {% endif %}
       </div>
       <!-- chrome panel -->
       <div class="modal-fields" id="modal-chrome-panel">
+        {% if cloud_mode %}
+        <p class="modal-hint">Nejdřív zkusíme automatický login přes headless Chromium na Railway. Pokud Pinterest vrátí CAPTCHA nebo 2FA, použijte hned pod tím upload cookies JSON.</p>
+        <div class="modal-row">
+          <label class="modal-label">Email</label>
+          <input class="modal-input" type="email" id="login-email" placeholder="váš@email.com" autocomplete="email">
+        </div>
+        <div class="modal-row">
+          <label class="modal-label">Heslo</label>
+          <input class="modal-input" type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="modal-row">
+          <label class="modal-label">Čekací čas (sek)</label>
+          <div class="modal-wait-row">
+            <input type="range" id="wait-slider" min="10" max="60" value="20" step="5"
+                   oninput="$('wait-val').textContent=this.value">
+            <div class="modal-wait-val" id="wait-val">20</div>
+          </div>
+        </div>
+        <div class="modal-actions" style="margin-top:14px">
+          <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
+          <button class="btn-modal-login" id="btn-modal-login" onclick="doLogin()">
+            <span id="modal-btn-label">Automaticky přihlásit</span>
+          </button>
+        </div>
+        <p class="modal-hint" style="margin-top:14px">Fallback: nahrajte exportovaný cookies JSON soubor.</p>
+        <input class="modal-input" type="file" id="cookies-file" accept=".json,application/json">
+        <button class="btn-open-chrome" id="btn-upload-cookies" onclick="uploadCookiesFile()" style="margin-top:10px;background:var(--ok);color:#0b0b0b">
+          Nahrát cookies JSON
+        </button>
+        {% else %}
         <p class="modal-hint">Otevře Pinterest v normálním Chrome — přihlaste se i přes Google. Poté klikněte na <em>Extrahovat cookies</em>.</p>
         <button class="btn-open-chrome" id="btn-open-chrome" onclick="openPinterestInChrome()">
           Otevřít Pinterest v&nbsp;Chrome
@@ -581,8 +615,10 @@
             Extrahovat cookies z Chrome
           </button>
         </div>
+        {% endif %}
       </div>
       <!-- playwright panel -->
+      {% if not cloud_mode %}
       <div class="modal-fields" id="modal-playwright-panel" style="display:none">
         <div class="modal-row">
           <label class="modal-label">Email</label>
@@ -607,6 +643,7 @@
           </button>
         </div>
       </div>
+      {% endif %}
       <div class="modal-log" id="modal-log"></div>
       <div class="modal-actions" id="modal-chrome-actions">
         <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
@@ -1122,6 +1159,39 @@ $('lightbox').addEventListener('click', e => {
 /* ── download ─────────────────────────────────────────────────────── */
 async function startDownloadIds(ids) {
   if (!ids.length) return;
+  if (window.CLOUD_MODE) {
+    $('btn-dl').disabled = true;
+    $('dl-bar').classList.add('visible');
+    $('dl-dot').className = 'dl-dot';
+    $('dl-text').textContent = `Připravuji ZIP pro ${ids.length} obrázků…`;
+    try {
+      const res = await fetch('/api/download-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preview_job_id: previewJobId, selected_ids: ids }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Download selhal.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pinterest-dl-selection.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      $('dl-text').textContent = '✓ ZIP stažen do browseru.';
+      $('dl-dot').className = 'dl-dot done';
+    } catch (err) {
+      $('dl-text').textContent = `Chyba: ${err.message}`;
+      $('dl-dot').className = 'dl-dot error';
+    }
+    $('btn-dl').disabled = false;
+    return;
+  }
   $('btn-dl').disabled = true;
   $('dl-bar').classList.add('visible');
   $('dl-dot').className   = 'dl-dot';
@@ -1205,9 +1275,9 @@ function closeLoginModal(e) {
 function switchLoginTab(tab) {
   const isChrome = tab === 'chrome';
   $('tab-chrome').classList.toggle('active', isChrome);
-  $('tab-playwright').classList.toggle('active', !isChrome);
+  if ($('tab-playwright')) $('tab-playwright').classList.toggle('active', !isChrome);
   $('modal-chrome-panel').style.display     = isChrome ? '' : 'none';
-  $('modal-playwright-panel').style.display = isChrome ? 'none' : '';
+  if ($('modal-playwright-panel')) $('modal-playwright-panel').style.display = isChrome ? 'none' : '';
   $('modal-chrome-actions').style.display   = isChrome ? '' : 'none';
   $('modal-log').innerHTML = '';
   $('modal-log').classList.remove('visible');
@@ -1254,6 +1324,30 @@ async function extractChromeCookies() {
   $('btn-extract').disabled = false;
   $('btn-extract').textContent = 'Extrahovat cookies z Chrome';
 }
+async function uploadCookiesFile() {
+  const input = $('cookies-file');
+  if (!input || !input.files.length) { modalLog('Vyberte JSON soubor s cookies.', 'err'); return; }
+  $('btn-upload-cookies').disabled = true;
+  $('btn-upload-cookies').textContent = 'Nahrávám…';
+  $('modal-log').innerHTML = '';
+  try {
+    const form = new FormData();
+    form.append('cookies_file', input.files[0]);
+    const res = await fetch('/api/login/upload', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      modalLog(data.error || 'Upload selhal.', 'err');
+    } else {
+      modalLog(`✓ Uloženo ${data.count} cookies. Přihlášení úspěšné!`, 'ok');
+      setLoggedIn(true);
+      $('modal-sub').textContent = 'Cookies jsou uloženy — Pinterest API přijme více výsledků.';
+    }
+  } catch (err) {
+    modalLog(`Síťová chyba: ${err.message}`, 'err');
+  }
+  $('btn-upload-cookies').disabled = false;
+  $('btn-upload-cookies').textContent = 'Nahrát cookies JSON';
+}
 async function doLogin() {
   const email = $('login-email').value.trim();
   const pass  = $('login-pass').value;
@@ -1262,7 +1356,7 @@ async function doLogin() {
   $('btn-modal-login').disabled = true;
   $('modal-btn-label').textContent = 'Přihlašuji…';
   $('modal-log').innerHTML = '';
-  modalLog('Otevírám prohlížeč…', '');
+  modalLog(window.CLOUD_MODE ? 'Spouštím headless Chromium na Railway…' : 'Otevírám prohlížeč…', '');
   try {
     const res  = await fetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1292,7 +1386,7 @@ async function doLogin() {
 }
 function resetLoginBtn() {
   $('btn-modal-login').disabled = false;
-  $('modal-btn-label').textContent = 'Přihlásit se';
+  $('modal-btn-label').textContent = window.CLOUD_MODE ? 'Automaticky přihlásit' : 'Přihlásit se';
 }
 async function doLogout() {
   await fetch('/api/logout', { method: 'POST' });
@@ -1300,14 +1394,16 @@ async function doLogout() {
   $('modal-sub').textContent = 'Přihlášení výrazně zvýší počet dostupných výsledků.';
   $('modal-log').innerHTML = '';
   $('modal-log').classList.remove('visible');
-  $('chrome-step2').style.display = 'none';
-  $('btn-open-chrome').textContent = 'Otevřít Pinterest v\u00a0Chrome';
+  if ($('chrome-step2')) $('chrome-step2').style.display = 'none';
+  if ($('btn-open-chrome')) $('btn-open-chrome').textContent = 'Otevřít Pinterest v\u00a0Chrome';
+  if ($('cookies-file')) $('cookies-file').value = '';
   modalLog('Cookies smazány.', '');
 }
 
 /* ── init ─────────────────────────────────────────────────────────── */
 addLine('Pinterest DL připraveno.', 'dim');
 addLine('Zadejte jméno umělce a klikněte Hledat.', 'dim');
+window.CLOUD_MODE = {{ 'true' if cloud_mode else 'false' }};
 </script>
 </body>
 </html>
