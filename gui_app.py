@@ -49,6 +49,14 @@ COOKIES_FILE = os.getenv("PINTEREST_DL_COOKIES_FILE", str(APP_ROOT / "cookies.js
 PINTEREST_DL_CMD = os.getenv("PINTEREST_DL_CMD", f"{sys.executable} -m pinterest_dl.cli")
 SETTINGS_FILE = APP_ROOT / "settings.json"
 KEYCHAIN_SERVICE = os.getenv("PINTEREST_DL_KEYCHAIN_SERVICE", "pinterest-dl")
+SERVER_PINTEREST_EMAIL = os.getenv("PINTEREST_EMAIL", "").strip()
+SERVER_PINTEREST_PASSWORD = os.getenv("PINTEREST_PASSWORD", "")
+SINGLE_USER_MODE = os.getenv("PINTEREST_SINGLE_USER_MODE", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+} or bool(SERVER_PINTEREST_EMAIL and SERVER_PINTEREST_PASSWORD)
 
 app = Flask(__name__)
 
@@ -193,6 +201,8 @@ def _delete_password_from_keychain(email: str) -> None:
 
 
 def _credential_available() -> bool:
+    if SINGLE_USER_MODE and SERVER_PINTEREST_EMAIL and SERVER_PINTEREST_PASSWORD:
+        return True
     email = _saved_email()
     if not email:
         return False
@@ -220,6 +230,10 @@ def _write_cookies(cookie_list: list[dict]) -> None:
 
 def _has_valid_session() -> bool:
     return _cookies_authenticated(_load_cookies())
+
+
+def _server_credentials() -> tuple[str, str]:
+    return SERVER_PINTEREST_EMAIL, SERVER_PINTEREST_PASSWORD
 
 
 def _extract_chrome_cookies() -> list[dict]:
@@ -300,6 +314,8 @@ def index():
         host_label=request.host,
         saved_email=_saved_email(),
         auto_login_available=(_credential_available() or (not CLOUD_MODE and sys.platform == "darwin")),
+        single_user_mode=SINGLE_USER_MODE,
+        server_account_email=SERVER_PINTEREST_EMAIL,
     )
 
 
@@ -324,6 +340,8 @@ def api_login_status():
             "saved_email": _saved_email(),
             "credential_available": _credential_available(),
             "auto_login_available": (_credential_available() or (not CLOUD_MODE and sys.platform == "darwin")),
+            "single_user_mode": SINGLE_USER_MODE,
+            "server_account_email": SERVER_PINTEREST_EMAIL,
         }
     )
 
@@ -335,6 +353,9 @@ def api_login():
     password = (data.get("password") or "")
     wait = max(10, min(60, int(data.get("wait", 20))))
     remember = bool(data.get("remember", not CLOUD_MODE))
+
+    if SINGLE_USER_MODE and not (email and password):
+        email, password = _server_credentials()
 
     if not email or not password:
         return jsonify({"error": "Email a heslo jsou povinné"}), 400
@@ -451,11 +472,14 @@ def api_login_auto():
                     _job_log(q, f"Chrome restore selhal: {exc}")
 
             if status != "done":
-                email = _saved_email()
-                if sys.platform == "darwin" and not CLOUD_MODE:
-                    password = _read_password_from_keychain(email)
+                if SINGLE_USER_MODE:
+                    email, password = _server_credentials()
                 else:
-                    password = _saved_password()
+                    email = _saved_email()
+                    if sys.platform == "darwin" and not CLOUD_MODE:
+                        password = _read_password_from_keychain(email)
+                    else:
+                        password = _saved_password()
                 if email and password:
                     _job_log(q, f"Zkousim automaticky login pro {email}...")
                     cookie_list = _collect_browser_cookies(

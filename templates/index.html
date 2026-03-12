@@ -569,7 +569,9 @@
     <div class="modal">
       <div class="modal-title">Přihlásit se</div>
       <div class="modal-sub" id="modal-sub">
-        {% if logged_in %}Relace je uložená lokálně a aplikace ji bude dál používat.
+        {% if single_user_mode %}
+        Server používá jeden Pinterest účet{% if server_account_email %}: {{ server_account_email }}{% endif %}. UI už po vás nechce mail ani heslo.
+        {% elif logged_in %}Relace je uložená lokálně a aplikace ji bude dál používat.
         {% else %}Aplikace si může přihlášení pamatovat lokálně, takže ho nemusíte řešit pokaždé.{% endif %}
       </div>
       <div class="modal-tabs" id="modal-tabs">
@@ -581,6 +583,15 @@
       <!-- chrome panel -->
       <div class="modal-fields" id="modal-chrome-panel">
         {% if cloud_mode %}
+        {% if single_user_mode %}
+        <p class="modal-hint">Railway poběží pod jedním serverovým Pinterest účtem. Tlačítko níže jen obnoví nebo znovu vytvoří session na backendu.</p>
+        <div class="modal-actions" style="margin-top:14px">
+          <button class="btn-modal-cancel" onclick="closeLoginModal()">Zavřít</button>
+          <button class="btn-modal-login" id="btn-modal-login" onclick="doLogin()">
+            <span id="modal-btn-label">Připojit serverový účet</span>
+          </button>
+        </div>
+        {% else %}
         <p class="modal-hint">Nejdřív zkusíme automatický login přes headless Chromium na Railway. Pokud Pinterest vrátí CAPTCHA nebo 2FA, použijte hned pod tím upload cookies JSON.</p>
         <div class="modal-row">
           <label class="modal-label">Email</label>
@@ -613,6 +624,7 @@
         <button class="btn-open-chrome" id="btn-upload-cookies" onclick="uploadCookiesFile()" style="margin-top:10px;background:var(--ok);color:#0b0b0b">
           Nahrát cookies JSON
         </button>
+        {% endif %}
         {% else %}
         <p class="modal-hint">Nejdřív zkusíme obnovit přihlášení automaticky z vašeho Chrome. Když to nestačí, otevřete Pinterest normálně v Chrome a aplikace si relaci uloží lokálně.</p>
         {% if auto_login_available %}
@@ -1313,6 +1325,14 @@ function updateSavedEmail(email) {
 }
 function getLoginElements() {
   if (window.CLOUD_MODE) {
+    if (window.SINGLE_USER_MODE) {
+      return {
+        email: null,
+        password: null,
+        wait: { value: '20' },
+        remember: { checked: true },
+      };
+    }
     return {
       email: $('cloud-login-email'),
       password: $('cloud-login-pass'),
@@ -1402,11 +1422,16 @@ async function doLogin() {
   const pass  = fields.password ? fields.password.value : '';
   const wait  = fields.wait ? parseInt(fields.wait.value) : 20;
   const remember = fields.remember ? fields.remember.checked : true;
-  if (!email || !pass) { modalLog('Zadejte email a heslo.', 'err'); return; }
+  if (!window.SINGLE_USER_MODE && (!email || !pass)) { modalLog('Zadejte email a heslo.', 'err'); return; }
   $('btn-modal-login').disabled = true;
-  $('modal-btn-label').textContent = 'Přihlašuji…';
+  $('modal-btn-label').textContent = window.SINGLE_USER_MODE ? 'Připojuji…' : 'Přihlašuji…';
   $('modal-log').innerHTML = '';
-  modalLog(window.CLOUD_MODE ? 'Spouštím headless Chromium na Railway…' : 'Otevírám prohlížeč…', '');
+  modalLog(
+    window.SINGLE_USER_MODE
+      ? 'Obnovuji serverovou Pinterest session…'
+      : (window.CLOUD_MODE ? 'Spouštím headless Chromium na Railway…' : 'Otevírám prohlížeč…'),
+    ''
+  );
   try {
     const res  = await fetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1496,7 +1521,11 @@ async function autoLogin(silent = false) {
 }
 function resetLoginBtn() {
   $('btn-modal-login').disabled = false;
-  $('modal-btn-label').textContent = window.CLOUD_MODE ? 'Automaticky přihlásit' : 'Přihlásit se';
+  if (window.SINGLE_USER_MODE) {
+    $('modal-btn-label').textContent = 'Připojit serverový účet';
+  } else {
+    $('modal-btn-label').textContent = window.CLOUD_MODE ? 'Automaticky přihlásit' : 'Přihlásit se';
+  }
 }
 async function doLogout() {
   await fetch('/api/logout', { method: 'POST' });
@@ -1516,6 +1545,7 @@ addLine('Pinterest DL připraveno.', 'dim');
 addLine('Zadejte jméno umělce a klikněte Hledat.', 'dim');
 window.CLOUD_MODE = {{ 'true' if cloud_mode else 'false' }};
 window.AUTO_LOGIN_AVAILABLE = {{ 'true' if auto_login_available else 'false' }};
+window.SINGLE_USER_MODE = {{ 'true' if single_user_mode else 'false' }};
 (async () => {
   try {
     const res = await fetch('/api/login/status');
